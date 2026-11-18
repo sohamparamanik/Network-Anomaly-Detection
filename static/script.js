@@ -9,76 +9,71 @@ document.addEventListener('DOMContentLoaded', () => {
     let totalAnomalies = 0;
 
     async function simulateTraffic(forceAnomaly = false) {
-        try {
-            btnNormal.disabled = true;
-            btnAnomaly.disabled = true;
+        btnNormal.disabled = true;
+        btnAnomaly.disabled = true;
 
+        try {
             const response = await fetch('/api/detect', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     simulate: true,
                     force_anomaly: forceAnomaly
                 })
             });
-
             const data = await response.json();
 
-            if (data.status === 'success') {
-                updateDashboard(data);
-            } else {
-                console.error('Error from server:', data.error);
-                alert('Error processing traffic: ' + data.error);
+            if (!response.ok || data.status !== 'success') {
+                throw new Error(data.error || 'Could not process traffic.');
             }
+            updateDashboard(data);
         } catch (error) {
-            console.error('Network error:', error);
+            console.error('Traffic simulation failed:', error);
+            alert(`Error processing traffic: ${error.message}`);
         } finally {
             btnNormal.disabled = false;
             btnAnomaly.disabled = false;
         }
     }
 
+    function addCell(row, value) {
+        const cell = document.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+        return cell;
+    }
+
+    function formatNumber(value) {
+        const number = Number(value);
+        return Number.isFinite(number) ? number.toLocaleString() : '0';
+    }
+
     function updateDashboard(data) {
-        const { prediction, features_used } = data;
+        const { prediction, features_used: features } = data;
         const isAnomaly = prediction === 'Anomaly';
 
-        // Update stats
         totalScanned++;
         if (isAnomaly) totalAnomalies++;
-
         totalScannedEl.textContent = totalScanned;
         totalAnomaliesEl.textContent = totalAnomalies;
 
-        // Add row to table
         const row = document.createElement('tr');
         row.className = 'row-enter';
+        addCell(row, new Date().toLocaleTimeString());
+        addCell(row, String(features.protocol_type || 'unknown').toUpperCase());
+        addCell(row, String(features.service || 'unknown'));
+        addCell(row, formatNumber(features.src_bytes));
+        addCell(row, formatNumber(features.dst_bytes));
 
-        const timestamp = new Date().toLocaleTimeString();
-        
-        row.innerHTML = `
-            <td>${timestamp}</td>
-            <td><span style="opacity: 0.8">${features_used.protocol_type.toUpperCase()}</span></td>
-            <td>${features_used.service}</td>
-            <td>${features_used.src_bytes.toLocaleString()}</td>
-            <td>${features_used.dst_bytes.toLocaleString()}</td>
-            <td>
-                <span class="badge ${isAnomaly ? 'anomaly' : 'normal'}">
-                    ${prediction}
-                </span>
-            </td>
-        `;
+        const statusCell = addCell(row, '');
+        const badge = document.createElement('span');
+        badge.className = `badge ${isAnomaly ? 'anomaly' : 'normal'}`;
+        badge.textContent = prediction;
+        statusCell.appendChild(badge);
 
-        if (trafficBody.firstChild) {
-            trafficBody.insertBefore(row, trafficBody.firstChild);
-        } else {
-            trafficBody.appendChild(row);
-        }
-
-        // Keep max 10 rows
+        trafficBody.prepend(row);
         if (trafficBody.children.length > 10) {
-            trafficBody.removeChild(trafficBody.lastChild);
+            trafficBody.removeChild(trafficBody.lastElementChild);
         }
     }
 
